@@ -1,0 +1,610 @@
+<html>
+<head>
+    <title>MP4 H264 Analyzer</title>
+    <script type="text/javascript" src="https://canvasjs.com/assets/script/canvasjs.min.js"></script></head>
+    <body>
+        <center><h1>MP4 Analyzer</h1>
+            <p>Drop an MP4 file with H264 encoding on this page</p>
+        </center>
+        
+        <div id="chartContainer" style="height: 300px; width: 100%;"></div>
+    <div id="SEIContainer"></div>
+        
+        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.1, created by Carl Lindqvist</p>
+          <p>@NESNioreh</p>
+        </center>
+        
+<script>
+    
+    var chartContainer = document.getElementById('chartContainer');
+    
+    function drawVideoChart(frameList) {
+       var bitrate = [];
+       var columnColors = [];
+       var pts = [];
+       var dts = [];
+
+       for (var i = 0; i < frameList.length; i++) {
+           bitrate.push(frameList[i].size);
+
+           if (frameList[i].frameType == "I" || frameList[i].frameType == "SI") {
+               if (frameList[i].keyFrame) {
+                   columnColors.push("Red");
+               } else {
+                   columnColors.push("Orange");
+               }
+           } else if (frameList[i].frameType == "P" || frameList[i].frameType == "SP") {
+               columnColors.push("Blue");
+           } else if (frameList[i].frameType == "B") {
+               columnColors.push("Green");
+           } else {
+               //Unknown frameType
+               columnColors.push("Black");
+           }
+
+           pts.push(frameList[i].pts);
+           dts.push(frameList[i].streamOrder);
+
+       }
+
+       var data = [];
+       var dataSeries = {
+           type: "column",
+           toolTipContent: "Frame: {x}<br>Bytes: {y}<br>PTS: {pts}<br>Decode order: {dts}"
+       };
+       var dataPoints = [];
+       for (var i = 0; i < bitrate.length; i += 1) {
+           dataPoints.push({
+               x: i,
+               y: bitrate[i],
+               color: columnColors[i],
+               pts: pts[i],
+               dts: dts[i]
+           });
+       }
+       dataSeries.dataPoints = dataPoints;
+       data.push(dataSeries);
+
+       var chart = new CanvasJS.Chart("chartContainer", {
+           zoomEnabled: true,
+           panEnabled: true,
+           title: {
+               text: "GOP Structure"
+           },
+           legend: {
+               horizontalAlign: "right",
+               verticalAlign: "center"
+           },
+           axisY: {
+               includeZero: false
+           },
+           data: data,
+       });
+
+        SEIContainer.innerHTML="<center><p>SEI data: "+SEI+"</p></center>";
+
+       chart.render();
+        
+    
+   }
+
+
+
+   var data;
+
+   var frameList = [];
+   var SEI = "";
+   var SEIContainer = document.getElementById('SEIContainer');
+
+   var exampleFrame = {
+       streamOrder: 75,
+       size: 12345,
+       frameType: "I",
+       pts: 512
+   }
+
+   function sortByPts(a, b) {
+       return parseFloat(a.pts) - parseFloat(b.pts);
+   }
+
+   //var dropZone = document.getElementById('dropZone');
+   var dropZone = document.body;
+
+   // Optional.   Show the copy icon when dragging over.  Seems to only work for chrome.
+   dropZone.addEventListener('dragover', function(e) {
+       e.stopPropagation();
+       e.preventDefault();
+       e.dataTransfer.dropEffect = 'copy';
+   });
+
+   function u8toString(u8) {
+       return String.fromCharCode.apply(null, u8);
+   }
+
+   function createHexString(arr) {
+       var result = "";
+
+       for (var i = 0; i < arr.length; i++) {
+           result += arr[i].toString(16);
+       }
+
+       return result;
+   }
+
+   function parseSEIData(offset) {
+
+       var NALtype = (new Uint8Array(data, offset + 4, 1))[0];
+       if (Number(NALtype & 0x1F) != 6) {
+           console.log("Not SEI NAL type");
+           return false;
+       }
+
+
+       var SEItype = (new Uint8Array(data, offset + 5, 1))[0];
+
+       if (Number(SEItype) == 5) {
+           console.log("Found User data unregistered SEI message")
+
+           var _position = 6;
+
+           var payloadSize = 0;
+           var payloadSizeByte;
+           do {
+               payloadSizeByte = Number((new Uint8Array(data, offset + _position, 1))[0]);
+               payloadSize = payloadSize + Number(payloadSizeByte);
+               _position++;
+           } while (Number(payloadSizeByte) == 255);
+
+           console.log("SEI Payload Size is " + payloadSize);
+
+           var _uuid = createHexString(new Uint8Array(data, offset + _position, 16));
+           _position += 16;
+
+           console.log("UUID: " + _uuid);
+
+           var messageLength = payloadSize - _position;
+
+           console.log("Message:");
+           
+           SEI = u8toString(new Uint8Array(data, offset + _position, messageLength));
+           console.log(SEI);
+
+       }
+
+
+
+       return false;
+   }
+
+   function readBits(arr, pos, bits) {
+
+       if (bits == 0) {
+           return 0;
+       }
+
+       var result = "";
+
+       for (var i = 0; i < bits; i++) {
+
+           arrPos = Math.floor((pos + i) / 8);
+           _pos = (pos + i) % 8;
+
+           var bit = Number(new Uint8Array([arr[arrPos] << _pos])[0] >> 7);
+
+           result = result + bit;
+       }
+       return parseInt(result, 2);
+
+   }
+
+   //Takes uint8Array and a bit posistion, returns parsed number in [0], number of bits read in [1]
+   function parseExpGolomb(arr, pos) {
+
+       var totalBits = 0;
+
+       var readBits = function(bits) {
+
+           if (bits == 0) {
+               return 0;
+           }
+
+           totalBits += bits;
+
+           var result = "";
+
+           for (var i = 0; i < bits; i++) {
+               arrPos = Math.floor((pos + i) / 8);
+               _pos = (pos + i) % 8;
+
+               var bit = Number(new Uint8Array([arr[arrPos] << _pos])[0] >> 7);
+
+               result = result + bit;
+           }
+           pos = pos + bits;
+           return parseInt(result, 2);
+       }
+
+       var leadingZeroBits = -1;
+
+       for (var b = 0; b == 0; leadingZeroBits++) {
+           b = readBits(1);
+       }
+
+       var value = Math.pow(2, leadingZeroBits) - 1 + readBits(leadingZeroBits);
+
+       return [value, totalBits];
+
+   }
+
+   function parseSliceHeader(offset, nalType) {
+       var rawData = new Uint8Array(data, offset, 32);
+       var bitOffset = 0;
+
+       var parseTemp = parseExpGolomb(rawData, bitOffset);
+       var firstMbInSlice = parseTemp[0];
+       bitOffset += parseTemp[1];
+
+       parseTemp = parseExpGolomb(rawData, bitOffset);
+       var sliceType = parseTemp[0];
+       bitOffset += parseTemp[1];
+
+       parseTemp = parseExpGolomb(rawData, bitOffset);
+       var pictParameterSetId = parseTemp[0];
+       bitOffset += parseTemp[1];
+
+       /*
+       slice_type Name of slice_type
+       0 P (P slice)
+       1 B (B slice)
+       2 I (I slice)
+       3 SP (SP slice)
+       4 SI (SI slice)
+       5 P (P slice)
+       6 B (B slice)
+       7 I (I slice)
+       8 SP (SP slice)
+       9 SI (SI slice) 
+       */
+
+       var frameType = sliceType;
+       if (sliceType == 0) {
+           frameType = "P";
+       }
+       if (sliceType == 1) {
+           frameType = "B";
+       }
+       if (sliceType == 2) {
+           frameType = "I";
+       }
+       if (sliceType == 3) {
+           frameType = "SP";
+       }
+       if (sliceType == 4) {
+           frameType = "SI";
+       }
+       if (sliceType == 5) {
+           frameType = "P";
+       }
+       if (sliceType == 6) {
+           frameType = "B";
+       }
+       if (sliceType == 7) {
+           frameType = "I";
+       }
+       if (sliceType == 8) {
+           frameType = "SP";
+       }
+       if (sliceType == 9) {
+           frameType = "SI";
+       }
+
+
+       //console.log("Slice type: " + frameType + ", FrameNum: " +frameNum);
+
+       return {
+           frameType: frameType
+       }
+
+   }
+
+   function parseH264Frames(samples) {
+
+       //console.log(samples);
+
+       var sampleSizes = samples[1];
+       var ptss = samples[2];
+       var samples = samples[0];
+       
+       frameList = [];
+
+       for (var i = 0; i < samples.length; i++) {
+
+           var _offset = 0;
+
+           while (_offset < sampleSizes[i]) {
+
+               var hex = new Uint8Array(data, samples[i] + _offset + 4, 1);
+               var nalSize = new DataView(data).getUint32(samples[i] + _offset);
+
+               var nalUnitType = Number(hex[0] & 0x1F);
+
+               if (nalUnitType == 6) {
+                   parseSEIData(samples[i] + _offset);
+               }
+
+               if (nalUnitType > 0 && nalUnitType < 6) {
+                   var headerData = parseSliceHeader(samples[i] + _offset + 5, Number(hex[0] & 0x1F));
+                   frameList.push({
+                       keyFrame: nalUnitType == 5,
+                       streamOrder: i,
+                       size: sampleSizes[i],
+                       frameType: headerData.frameType,
+                       pts: ptss[i]
+                   });
+               }
+
+               _offset += nalSize + 4;
+           }
+       }
+
+   }
+
+
+   function getSampleInfo(stsz, stco, stsc, stts, ctts) {
+
+       var samplesPerChunk = [];
+       var chunkStarts = [];
+       var sampleStarts = [];
+       var sampleSizes = [];
+       var sampleDeltas = [];
+       var samplePtss = [];
+
+       //Read samples per chunk info
+       var blocks = new DataView(data).getUint32(stsc.offset + 12);
+
+       for (var i = 0; i < blocks; i++) {
+           var firstChunk = new DataView(data).getUint32(stsc.offset + 16 + (12 * (i)));
+           var nextFirst = 0;
+           var nrChunks = 1;
+           if (i + 1 < blocks) {
+               nextFirst = new DataView(data).getUint32(stsc.offset + 16 + (12 * (i + 1)));
+               nrChunks = nextFirst - firstChunk;
+           }
+
+           var _samplesPerChunk = new DataView(data).getUint32(stsc.offset + 20 + (12 * (i)));
+
+           for (var j = 0; j < nrChunks; j++) {
+               samplesPerChunk.push(_samplesPerChunk);
+           }
+       }
+
+       //Read Chunk starts (stco)
+
+       var chunks = new DataView(data).getUint32(stco.offset + 12);
+
+       for (var i = 0; i < chunks; i++) {
+           chunkStarts.push(new DataView(data).getUint32(stco.offset + 16 + (4 * i)));
+       }
+
+       //Read Sample starts (stsz)
+
+       var samples = new DataView(data).getUint32(stsz.offset + 16);
+
+       var sampleChunk = 0;
+       var sampleLocation = 0;
+       var used = 0;
+       var sampleSizeAcc = 0;
+       for (var i = 0; i < samples; i++) {
+           //Figure out which chunk this sample is in
+           used++;
+
+           if (used > samplesPerChunk[sampleChunk]) {
+               if (sampleChunk + 1 < samplesPerChunk.length) {
+                   sampleChunk++;
+               }
+               sampleLocation++;
+               used = 1;
+               sampleSizeAcc = 0;
+           }
+
+           var _sampleSize = new DataView(data).getUint32(stsz.offset + 20 + (i * 4));
+
+           sampleStarts.push(chunkStarts[sampleLocation] + sampleSizeAcc);
+           sampleSizes.push(_sampleSize);
+           sampleSizeAcc += _sampleSize;
+       }
+
+       //console.log(sampleStarts);
+
+       //Read sample delta values
+
+       var sttsEntries = new DataView(data).getUint32(stts.offset + 12);
+
+       for (var i = 0; i < sttsEntries; i++) {
+           var sampleCount = new DataView(data).getUint32(stts.offset + 16 + (8 * i));
+           var sampleDelta = new DataView(data).getUint32(stts.offset + 20 + (8 * i));
+           for (var j = 0; j < sampleCount; j++) {
+               sampleDeltas.push(sampleDelta);
+           }
+       }
+
+       //Parse PTS from ctts+stts
+
+       var currentTimeStamp = 0;
+       var currentSample = -1;
+       var cttsEntries = new DataView(data).getUint32(ctts.offset + 12);
+       var startOffset = 0;
+
+       for (var i = 0; i < cttsEntries; i++) {
+           var sampleCount = new DataView(data).getUint32(ctts.offset + 16 + (8 * i));
+           var sampleOffset = new DataView(data).getUint32(ctts.offset + 20 + (8 * i));
+           for (var j = 0; j < sampleCount; j++) {
+               currentSample++;
+               if (i == 0 && j == 0) {
+                   startOffset = sampleOffset;
+               }
+               samplePtss.push(currentTimeStamp + sampleDeltas[currentSample] + sampleOffset - startOffset);
+               currentTimeStamp += sampleDeltas[currentSample];
+           }
+       }
+
+       return [sampleStarts, sampleSizes, samplePtss];
+
+   }
+
+   function listAtoms(startOffset, endOfFile, level) {
+       var atoms = [];
+
+       var localLevel = level;
+
+       var localOffset = startOffset;
+
+       while (localOffset < endOfFile) {
+           var currentAtomOffset = localOffset;
+           localOffset = localOffset + new DataView(data).getUint32(localOffset);
+           atomname = u8toString(new Uint8Array(data, currentAtomOffset + 4, 4));
+           atoms.push({
+               offset: currentAtomOffset,
+               name: atomname,
+               level: localLevel
+           });
+           if (atomname == "moov" ||
+               atomname == "trak" ||
+               atomname == "mdia" ||
+               atomname == "minf" ||
+               atomname == "stbl") {
+               console.log("Found "+atomname+", going deeper");
+               atoms = atoms.concat(listAtoms(currentAtomOffset + 8, localOffset, localLevel + 1));
+           }
+           if(atomname == "stsd"){
+               console.log("Found "+atomname+", handle with care");
+               atoms = atoms.concat(listAtoms(currentAtomOffset + 16, localOffset, localLevel + 1));
+           }
+       }
+       
+       console.log("All done with atoms");
+
+       return atoms;
+
+   }
+
+   function parseMp4() {
+
+       if (data.byteLength < 8 ||
+           !(u8toString(new Uint8Array(data, 4, 4)) == "ftyp")
+       ) {
+           console.log("Not an MP4 file");
+           chartContainer.innerHTML="<center><p style=\"color:red;\">Not recognized as MP4 file<p><center>"
+           return false;
+       }
+
+       var atoms = [];
+
+       var offset = new DataView(data).getUint32(0);
+       var atomname = u8toString(new Uint8Array(data, 4, 4));
+
+       atoms.push({
+           offset: offset,
+           name: atomname,
+           level: 0
+       });
+       
+       var majorBrand;
+       var majorBrandVersion;
+       var compatibleBrands = [];
+
+       majorBrand = u8toString(new Uint8Array(data, 8, 4));
+       majorBrandVersion = new DataView(data).getUint32(12);
+
+       for (var i = 16; i < offset; i = i + 4) {
+           compatibleBrands.push(u8toString(new Uint8Array(data, i, 4)));
+       }
+
+       console.log("Major Brand: " + majorBrand);
+       console.log("Major Brand Version: " + majorBrandVersion);
+
+       for (var i = 0; i < compatibleBrands.length; i++) {
+           console.log("Compatible Brand: " + compatibleBrands[i]);
+       }
+
+       atoms = atoms.concat(listAtoms(offset, data.byteLength, 0));
+       
+       
+       
+       for (var i = 0; i < atoms.length; i++) {
+           var localLevel = atoms[i].level;
+           var levelIndicator = "";
+           for (var j = 0; j < localLevel; j++) {
+               levelIndicator = levelIndicator + "-";
+           }
+           console.log(levelIndicator + "[" + atoms[i].name + "]");
+
+       }
+       
+       var avc1 = false;
+       var avcTrack = 0;
+       for (var i = 0; i<atoms.length; i++){
+           if(atoms[i].name=="trak"){
+               avcTrack=i;
+           }
+           if(atoms[i].name=="avc1"){
+               avc1=true;
+               break;
+           }
+       }
+       
+       if(avc1 == false){
+           console.log("Could not find h264 track");
+           chartContainer.innerHTML="<center><p style=\"color:red;\">No h264 track found<p><center>"
+           return false;
+       }
+
+       var stsz, stco, stsc, stts, ctts;
+       for (var j = avcTrack+1; j < atoms.length; j++) {
+           if (atoms[j].level <= atoms[avcTrack].level) {
+               break;
+           }
+           if (atoms[j].name == "stsz") stsz = atoms[j];
+           if (atoms[j].name == "stco") stco = atoms[j];
+           if (atoms[j].name == "stsc") stsc = atoms[j];
+           if (atoms[j].name == "stts") stts = atoms[j];
+           if (atoms[j].name == "ctts") ctts = atoms[j];
+       }
+       if (stsz == undefined || stco == undefined || stsc == undefined || stts == undefined || ctts == undefined) {
+           console.log("Could not find correct atoms for track");
+           chartContainer.innerHTML="<center><p style=\"color:red;\">Avc track is missing importans atoms/boxes<p><center>"
+           return false;
+       } else {
+           var samples = getSampleInfo(stsz, stco, stsc, stts, ctts);
+           parseH264Frames(samples);
+           frameList.sort(sortByPts);
+           drawVideoChart(frameList);
+       }
+   }
+
+   // Get file data on drop
+   dropZone.addEventListener('drop', function(e) {
+       
+       chartContainer.innerHTML="<center><p>Loading...</p></center>";
+       
+       SEI="";
+       SEIContainer.innerHTML="";
+       
+       e.stopPropagation();
+       e.preventDefault();
+       var files = e.dataTransfer.files; // Array of all files
+       for (var i = 0, file; file = files[i]; i++) {
+           //if (file.type.match(/image.*/)) {
+           var reader = new FileReader();
+
+           reader.onload = function(e2) { // finished reading file data.
+               data = e2.target.result;
+               parseMp4();
+           }
+           reader.readAsArrayBuffer(file); // start reading the file data.
+           //}
+       }
+   });
+</script>
+    </body>
+</html>
