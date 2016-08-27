@@ -446,20 +446,30 @@
 
        var currentTimeStamp = 0;
        var currentSample = -1;
-       var cttsEntries = new DataView(data).getUint32(ctts.offset + 12);
+       if (ctts!= undefined){
+           var cttsEntries = new DataView(data).getUint32(ctts.offset + 12);
+       }
        var startOffset = 0;
 
-       for (var i = 0; i < cttsEntries; i++) {
-           var sampleCount = new DataView(data).getUint32(ctts.offset + 16 + (8 * i));
-           var sampleOffset = new DataView(data).getUint32(ctts.offset + 20 + (8 * i));
-           for (var j = 0; j < sampleCount; j++) {
-               currentSample++;
-               if (i == 0 && j == 0) {
-                   startOffset = sampleOffset;
+       if(ctts != undefined){
+           for (var i = 0; i < cttsEntries; i++) {
+               var sampleCount = new DataView(data).getUint32(ctts.offset + 16 + (8 * i));
+               var sampleOffset = new DataView(data).getUint32(ctts.offset + 20 + (8 * i));
+               for (var j = 0; j < sampleCount; j++) {
+                   currentSample++;
+                   if (i == 0 && j == 0) {
+                       startOffset = sampleOffset;
+                   }
+                   samplePtss.push(currentTimeStamp + sampleDeltas[currentSample] + sampleOffset - startOffset);
+                   currentTimeStamp += sampleDeltas[currentSample];
                }
-               samplePtss.push(currentTimeStamp + sampleDeltas[currentSample] + sampleOffset - startOffset);
-               currentTimeStamp += sampleDeltas[currentSample];
            }
+       }
+       else{
+           for (var i = 0; i < sampleDeltas.length; i++){
+               samplePtss.push(currentTimeStamp + sampleDeltas[i]);
+               currentTimeStamp+=sampleDeltas[i];
+           }           
        }
 
        return [sampleStarts, sampleSizes, samplePtss];
@@ -584,11 +594,14 @@
            if (atoms[j].name == "stts") stts = atoms[j];
            if (atoms[j].name == "ctts") ctts = atoms[j];
        }
-       if (stsz == undefined || stco == undefined || stsc == undefined || stts == undefined || ctts == undefined) {
+       if (stsz == undefined || stco == undefined || stsc == undefined || stts == undefined) {
            console.log("Could not find correct atoms for track");
            chartContainer.innerHTML="<center><p style=\"color:red;\">Avc track is missing importans atoms/boxes<p><center>"
            return false;
        } else {
+           if (ctts == undefined){
+               console.log("No ctts atom found. Baseline? Or just missing")
+           }
            var samples = getSampleInfo(stsz, stco, stsc, stts, ctts);
            parseH264Frames(samples);
            frameList.sort(sortByPts);
