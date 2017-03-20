@@ -177,11 +177,18 @@
            console.log("UUID: " + _uuid);
 
            var messageLength = payloadSize - _position;
-
-           console.log("Message:");
            
-           SEI = u8toString(new Uint8Array(data, offset + _position, messageLength));
-           console.log(SEI);
+           if(messageLength>0){
+
+               console.log("Message:");
+
+               SEI = u8toString(new Uint8Array(data, offset + _position, messageLength));
+               console.log(SEI);
+           }else{
+               SEI = "Unable to parse SEI data";
+               console.log("Unable to parse SEI data");
+               console.log(messageLength);
+           }
 
        }
 
