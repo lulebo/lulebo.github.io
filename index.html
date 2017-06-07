@@ -33,6 +33,7 @@
     var chartContainer = document.getElementById('chartContainer');
     
     function drawVideoChart(frameList) {
+       var totalSize = 0;
        var bitrate = [];
        var columnColors = [];
        var pts = [];
@@ -40,7 +41,9 @@
 	   var GOPbitrate = [];
 
        for (var i = 0; i < frameList.length; i++) {
-           bitrate.push(frameList[i].size);
+	       var frameSize = frameList[i].size;
+           bitrate.push(frameSize);
+		   totalSize += frameSize;
 
            if (frameList[i].frameType == "I" || frameList[i].frameType == "SI") {
                if (frameList[i].keyFrame) {
@@ -61,7 +64,7 @@
            pts.push(frameList[i].pts);
            dts.push(frameList[i].streamOrder);
 		   
-		   GOPbitrate[GOPbitrate.length - 1].size += frameList[i].size;
+		   GOPbitrate[GOPbitrate.length - 1].size += frameSize;
 		   GOPbitrate[GOPbitrate.length - 1].gopFrameLength += 1;
        }
        
