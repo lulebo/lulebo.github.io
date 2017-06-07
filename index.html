@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>MP4 H264 Analyzer</title>
-    <meta name="description" content="Analyze GOP Structure of h264 MP4 files in your browser">
+    <meta name="description" content="Analyze MP4 files in your browser. Frame information, GOP structure and bitrate is presented in a nice graph.">
     <script>
       (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
       (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
@@ -18,7 +18,7 @@
     <script type="text/javascript" src="canvasjs.js"></script></head>
     <body>
         <center><h1>MP4 Analyzer</h1>
-            <p>Drop an MP4 file with H264 encoding on this page</p>
+            <p>Drop an MP4/MOV file with H264 encoding on this page</p>
         </center>
         
         <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle some more advanced files, or fragmented MP4s. Will not display frames correctly if frames are split over several slices/NAL Units.</div></p></center></p></div>
