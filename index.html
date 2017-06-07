@@ -129,7 +129,9 @@
            data: data,
        });
 
-        SEIContainer.innerHTML="<center><p>SEI data: "+SEI+"</p></center>";
+       var avgBitrate = Math.round((totalSize / (pts.length / frameRate)) * 8 / 1000);
+		
+       SEIContainer.innerHTML="<center><p>SEI data: "+SEI+"</p><p>Frame rate: "+frameRate+"</p><p>Average bitrate: "+avgBitrate+"kbps</p></center>";
 
        chart.render();
         
