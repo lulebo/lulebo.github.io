@@ -21,10 +21,10 @@
             <p>Drop an MP4/MOV file with H264 encoding on this page</p>
         </center>
         
-        <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle some more advanced files, or fragmented MP4s. Will not display frames correctly if frames are split over several slices/NAL Units.</div></p></center></p></div>
+        <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle fragmented MP4s. Might have other issues with strange MP4 flavors.</div></p></center></p></div>
     <div id="SEIContainer"></div>
         
-        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.2, created by Carl Lindqvist</p>
+        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.3, by Carl Lindqvist 2018</p>
           <p>@NESNioreh</p>
         </center>
         
@@ -133,8 +133,14 @@
        });
 
        var avgBitrate = Math.round((totalSize / (pts.length / frameRate)) * 8 / 1000);
-		
-       SEIContainer.innerHTML="<center><p>SEI data: "+SEI+"</p><p>Frame rate: "+frameRate+"</p><p>Average bitrate: "+avgBitrate+"kbps</p></center>";
+	
+	   if(SEI != "") SEI = "<p>SEI data: "+SEI+"</p>";
+	   
+	   if(h264Profile != "") h264Profile = "<p>"+h264Profile+", level "+h264Level+"</p>";
+	   
+	   if(h264RefFrames != "") h264RefFrames = "<p>Number of ref frames signalled in bitstream: "+h264RefFrames+"</p>";
+	   
+       SEIContainer.innerHTML="<center>" + h264Profile + h264RefFrames + SEI + "<p>Frame rate: "+frameRate+"</p><p>Average bitrate: "+avgBitrate+"kbps</p></center>";
 
        chart.render();
         
@@ -149,6 +155,11 @@
    var SEI = "";
    var SEIContainer = document.getElementById('SEIContainer');
 
+   var h264Profile = "";
+   var h264Level = "";
+   var h264RefFrames = "";
+   
+   
    var exampleFrame = {
        streamOrder: 75,
        size: 12345,
@@ -296,7 +307,7 @@
 
    }
 
-   function parseSliceHeader(offset, nalType) {
+   function parseSliceHeader(offset,) {
        var rawData = new Uint8Array(data, offset, 32);
        var bitOffset = 0;
 
@@ -308,9 +319,18 @@
        var sliceType = parseTemp[0];
        bitOffset += parseTemp[1];
 
-       parseTemp = parseExpGolomb(rawData, bitOffset);
+       /*
+	   parseTemp = parseExpGolomb(rawData, bitOffset);
        var pictParameterSetId = parseTemp[0];
        bitOffset += parseTemp[1];
+	   
+	   parseTemp = parseExpGolomb(rawData, bitOffset);
+	   var frameNum = parseTemp[0];
+       bitOffset += parseTemp[1];
+	   */
+	   
+	   //console.log("pictParameterSetId in slice header: "+pictParameterSetId);
+	   
 
        /*
        slice_type Name of slice_type
@@ -366,6 +386,143 @@
        }
 
    }
+   
+   //var slices = 1;
+   
+   function parsePicParameterSetRbsp(offset){
+		
+		/*
+		 pic_parameter_set_id 1 ue(v)
+		 seq_parameter_set_id 1 ue(v)
+		 entropy_coding_mode_flag 1 u(1)
+		 pic_order_present_flag 1 u(1)
+		 num_slice_groups_minus1 1 ue(v) 
+		*/
+		
+		//console.log("Found pict_parameter_set_rbsp");
+		
+		var rawData = new Uint8Array(data, offset, 32);
+		var bitOffset = 0;
+
+		var parseTemp = parseExpGolomb(rawData, bitOffset);
+		var pic_parameter_set_id = parseTemp[0];
+		bitOffset += parseTemp[1];
+		
+		console.log("pic_parameter_set_id: " + pic_parameter_set_id);
+		
+		parseTemp = parseExpGolomb(rawData, bitOffset);
+		var seq_parameter_set_id = parseTemp[0];
+		bitOffset += parseTemp[1];
+		
+		console.log("seq_parameter_set_id: " + seq_parameter_set_id);
+		
+		bitOffset += 2;
+		
+		parseTemp = parseExpGolomb(rawData, bitOffset);
+		var slices = parseTemp[0];
+		
+		console.log("Slices minus 1: " + slices);
+		
+   }
+   
+	function parseSeqParameterSetRbsp(offset){
+		console.log("Parsing seqParameterSet");
+		
+		var rawData = new Uint8Array(data, offset + 3, 64);
+		var bitOffset = 0;
+		
+		var hex = new Uint8Array(data, offset, 1);
+		var profile_idc = Number(hex[0]);
+		
+		hex = new Uint8Array(data, offset + 2, 1);
+		var level_idc = Number(hex[0]);
+		
+		if(profile_idc == 0) profile_idc = "Unknown";
+		if(profile_idc == 66) profile_idc = "Baseline";
+		if(profile_idc == 77) profile_idc = "Main";
+		if(profile_idc == 88) profile_idc = "Extended";
+		if(profile_idc == 100) profile_idc = "High";
+		if(profile_idc == 122) profile_idc = "422";
+		if(profile_idc == 110) profile_idc = "High10";
+		if(profile_idc == 144) profile_idc = "444";
+		if(profile_idc == 83) profile_idc = "ScalableBase";
+		if(profile_idc == 86) profile_idc = "MultiviewHigh";
+		if(profile_idc == 118) profile_idc = "MultiviewHigh";
+		if(profile_idc == 128) profile_idc = "StereoHigh";
+		if(profile_idc == 256) profile_idc = "ConstrainedBase";
+		if(profile_idc == 257) profile_idc = "UCConstrainedHigh";
+		if(profile_idc == 258) profile_idc = "UCScalableConstrainedBase";
+		if(profile_idc == 259) profile_idc = "UCScalableConstrainedHigh";
+		
+		console.log("h264 info: " + profile_idc +" Profile, level " + level_idc/10);
+
+		h264Profile = profile_idc + " Profile";
+		h264Level = "" + level_idc/10;
+		
+		var parseTemp = parseExpGolomb(rawData, bitOffset);
+		var seq_parameter_set_id = parseTemp[0];
+		bitOffset += parseTemp[1];
+		
+		console.log("seq_parameter_set_id: " + seq_parameter_set_id);
+		
+		parseTemp = parseExpGolomb(rawData, bitOffset);
+		var log2_max_frame_num_minus4 = parseTemp[0];
+		bitOffset += parseTemp[1];
+		
+		console.log("log2_max_frame_num_minus4: " + log2_max_frame_num_minus4);
+		
+		parseTemp = parseExpGolomb(rawData, bitOffset);
+		var pic_order_cnt_type = parseTemp[0];
+		bitOffset += parseTemp[1];
+		
+		console.log("pic_order_cnt_type: " + pic_order_cnt_type);
+		
+		if( pic_order_cnt_type == 0 ){
+			
+			parseTemp = parseExpGolomb(rawData, bitOffset);
+			var log2_max_pic_order_cnt_lsb_minus4 = parseTemp[0];
+			bitOffset += parseTemp[1];
+			
+			console.log("log2_max_pic_order_cnt_lsb_minus4: " + log2_max_pic_order_cnt_lsb_minus4);
+			
+		}else{
+			
+			bitOffset += 1;
+			parseTemp = parseExpGolomb(rawData, bitOffset);
+			var offset_for_non_ref_pic = parseTemp[0];
+			bitOffset += parseTemp[1];
+			
+			console.log("offset_for_non_ref_pic: " + offset_for_non_ref_pic);
+			
+			parseTemp = parseExpGolomb(rawData, bitOffset);
+			var offset_for_top_to_bottom_field = parseTemp[0];
+			bitOffset += parseTemp[1];
+			
+			console.log("offset_for_top_to_bottom_field: " + offset_for_top_to_bottom_field);
+			
+			parseTemp = parseExpGolomb(rawData, bitOffset);
+			var num_ref_frames_in_pic_order_cnt_cycle = parseTemp[0];
+			bitOffset += parseTemp[1];
+			
+			console.log("num_ref_frames_in_pic_order_cnt_cycle: " + num_ref_frames_in_pic_order_cnt_cycle);
+			
+			for( var f = 0; f < num_ref_frames_in_pic_order_cnt_cycle; f++ ){
+				parseTemp = parseExpGolomb(rawData, bitOffset);
+				var offset_for_ref_frame = parseTemp[0];
+				bitOffset += parseTemp[1];
+				
+				console.log("offset_for_ref_frame "+f+": " + offset_for_ref_frame);
+			}
+		}
+		
+		parseTemp = parseExpGolomb(rawData, bitOffset);
+		var num_ref_frames = parseTemp[0];
+		bitOffset += parseTemp[1];
+		
+		console.log("num_ref_frames: " + num_ref_frames);
+		
+		h264RefFrames = "" + num_ref_frames;
+	}
 
    function parseH264Frames(samples) {
 
@@ -377,12 +534,16 @@
        
        frameList = [];
 
+	   var seqDataFound = false;
+	   
        for (var i = 0; i < samples.length; i++) {
 
            var _offset = 0;
 
+		   var frameFound = false;
+		   
            while (_offset < sampleSizes[i]) {
-
+		   
                var hex = new Uint8Array(data, samples[i] + _offset + 4, 1);
                var nalSize = new DataView(data).getUint32(samples[i] + _offset);
 
@@ -391,9 +552,19 @@
                if (nalUnitType == 6) {
                    parseSEIData(samples[i] + _offset);
                }
+			   
+			   if (nalUnitType == 7 && !seqDataFound) {
+					seqDataFound = true;
+					parseSeqParameterSetRbsp(samples[i] + _offset + 5);
+               }
+			   
+			   /*if (nalUnitType == 8) {
+                   parsePicParameterSetRbsp(samples[i] + _offset + 5);
+               }*/
 
-               if (nalUnitType > 0 && nalUnitType < 6) {
-                   var headerData = parseSliceHeader(samples[i] + _offset + 5, Number(hex[0] & 0x1F));
+               if (nalUnitType > 0 && nalUnitType < 6 && !frameFound) {
+					frameFound = true;
+                   var headerData = parseSliceHeader(samples[i] + _offset + 5);
                    frameList.push({
                        keyFrame: nalUnitType == 5,
                        streamOrder: i,
@@ -551,6 +722,15 @@
                name: atomname,
                level: localLevel
            });
+		   
+		   if(atomname == "mdat"){
+				if(localOffset==(startOffset + 1)){
+					console.log("Detecting 64 bit mdat offset");
+					console.log("Mdat size: "+ (((new DataView(data).getUint32(startOffset+8))+1) * (new DataView(data).getUint32(startOffset+12))));
+					localOffset = startOffset + (((new DataView(data).getUint32(startOffset+8))+1) * (new DataView(data).getUint32(startOffset+12)));
+				}
+		   }
+		   
            if (atomname == "moov" ||
                atomname == "trak" ||
                atomname == "mdia" ||
