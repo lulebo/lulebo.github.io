@@ -437,6 +437,48 @@
 		hex = new Uint8Array(data, offset + 2, 1);
 		var level_idc = Number(hex[0]);
 		
+		var parseTemp = parseExpGolomb(rawData, bitOffset);
+		var seq_parameter_set_id = parseTemp[0];
+		bitOffset += parseTemp[1];
+		
+		console.log("seq_parameter_set_id: " + seq_parameter_set_id);
+		
+		if( profile_idc == 100 || profile_idc == 110 ||
+			profile_idc == 122 || profile_idc == 244 || profile_idc == 44 ||
+			profile_idc == 83 || profile_idc == 86 || profile_idc == 118 ||
+			profile_idc == 128 || profile_idc == 138 || profile_idc == 139 ||
+			profile_idc == 134 || profile_idc == 135 ) {
+		
+			parseTemp = parseExpGolomb(rawData, bitOffset);
+			var chroma_format_idc = parseTemp[0];
+			bitOffset += parseTemp[1];
+			
+			console.log("chroma_format_idc: " + chroma_format_idc);
+			
+			if( chroma_format_idc == 3 ){
+			
+				bitOffset += 1;
+			
+			}
+			
+			parseTemp = parseExpGolomb(rawData, bitOffset);
+			var bit_depth_luma_minus8 = parseTemp[0];
+			bitOffset += parseTemp[1];
+			
+			console.log("bit_depth_luma_minus8: " + bit_depth_luma_minus8);
+			
+			parseTemp = parseExpGolomb(rawData, bitOffset);
+			var bit_depth_chroma_minus8 = parseTemp[0];
+			bitOffset += parseTemp[1];
+			
+			console.log("bit_depth_chroma_minus8: " + bit_depth_chroma_minus8);
+			
+			//Todo check scaling matrix present flag
+			
+			bitOffset += 2;
+		
+		}		
+		
 		if(profile_idc == 0) profile_idc = "Unknown";
 		if(profile_idc == 66) profile_idc = "Baseline";
 		if(profile_idc == 77) profile_idc = "Main";
@@ -458,12 +500,6 @@
 
 		h264Profile = profile_idc + " Profile";
 		h264Level = "" + level_idc/10;
-		
-		var parseTemp = parseExpGolomb(rawData, bitOffset);
-		var seq_parameter_set_id = parseTemp[0];
-		bitOffset += parseTemp[1];
-		
-		console.log("seq_parameter_set_id: " + seq_parameter_set_id);
 		
 		parseTemp = parseExpGolomb(rawData, bitOffset);
 		var log2_max_frame_num_minus4 = parseTemp[0];
