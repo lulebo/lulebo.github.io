@@ -24,7 +24,7 @@
         <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle fragmented MP4s. Might have other issues with strange MP4 flavors.<br><br>Should now parse Profile and Level correctly for most files</div></p></center></p></div>
     <div id="SEIContainer"></div>
         
-        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.35, by Carl Lindqvist 2018</p>
+        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.36, by Carl Lindqvist 2018</p>
           <p>@NESNioreh</p>
         </center>
         
@@ -32,6 +32,17 @@
     
     var chartContainer = document.getElementById('chartContainer');
     
+	function frameToTimestamp(frame, framerate){
+		var seconds = frame / framerate;
+		var minutes = seconds / 60;
+		var hours = Math.floor(minutes / 60);
+		var milliseconds = Math.floor(((frame % framerate)/framerate)*1000);
+		seconds = Math.floor(seconds % 60);
+		minutes = Math.floor(minutes % 60);
+		
+		return "" + ("0" + hours).slice(-2) + ":" +("0" + minutes).slice(-2) + ":" + ("0" + seconds).slice(-2) + ":" + ("00" + milliseconds).slice(-3);
+	}
+	
     function drawVideoChart(frameList) {
        var totalSize = 0;
        var bitrate = [];
@@ -78,7 +89,7 @@
        var data = [];
        var dataSeries = {
            type: "column",
-           toolTipContent: "Frame: {x}<br>Bytes: {y}<br>PTS: {pts}<br>Decode order: {dts}"
+           toolTipContent: "Frame: {x}<br>Bytes: {y}<br>PTS: {pts}<br>Decode order: {dts}<br>Timestamp: {time}"
        };
        var dataPoints = [];
        for (var i = 0; i < bitrate.length; i += 1) {
@@ -87,7 +98,8 @@
                y: bitrate[i],
                color: columnColors[i],
                pts: pts[i],
-               dts: dts[i]
+               dts: dts[i],
+			   time: frameToTimestamp(pts[i]-pts[0],timeScale)
            });
        }
        dataSeries.dataPoints = dataPoints;
