@@ -21,10 +21,10 @@
             <p>Drop an MP4/MOV file with H264 encoding on this page</p>
         </center>
         
-        <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle fragmented MP4s. Might have other issues with strange MP4 flavors.</div></p></center></p></div>
+        <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle fragmented MP4s. Might have other issues with strange MP4 flavors.<br><br>Should now parse Profile and Level correctly for most files</div></p></center></p></div>
     <div id="SEIContainer"></div>
         
-        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.3, by Carl Lindqvist 2018</p>
+        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.35, by Carl Lindqvist 2018</p>
           <p>@NESNioreh</p>
         </center>
         
@@ -434,8 +434,12 @@
 		var hex = new Uint8Array(data, offset, 1);
 		var profile_idc = Number(hex[0]);
 		
+		console.log("profile_idc: " + profile_idc);
+		
 		hex = new Uint8Array(data, offset + 2, 1);
 		var level_idc = Number(hex[0]);
+		
+		console.log("level_idc: " + level_idc);
 		
 		var parseTemp = parseExpGolomb(rawData, bitOffset);
 		var seq_parameter_set_id = parseTemp[0];
@@ -578,9 +582,9 @@
 
 		   var frameFound = false;
 		   
-           while (_offset < sampleSizes[i]) {
+		   while (_offset < sampleSizes[i]) {
 		   
-               var hex = new Uint8Array(data, samples[i] + _offset + 4, 1);
+			   var hex = new Uint8Array(data, samples[i] + _offset + 4, 1);
                var nalSize = new DataView(data).getUint32(samples[i] + _offset);
 
                var nalUnitType = Number(hex[0] & 0x1F);
@@ -591,6 +595,7 @@
 			   
 			   if (nalUnitType == 7 && !seqDataFound) {
 					seqDataFound = true;
+					console.log("Found seq parameter set NAL in bitstream at " + (samples[i] + _offset + 5));
 					parseSeqParameterSetRbsp(samples[i] + _offset + 5);
                }
 			   
@@ -609,10 +614,15 @@
                        pts: ptss[i]
                    });
                }
-
-               _offset += nalSize + 4;
+			   
+			   _offset += nalSize + 4;
            }
        }
+	   
+	   if(!seqDataFound && avcCspsStart != 0){
+		console.log("No seq parameter set found, but was in avcC box at "+avcCspsStart+". Reading from that.");
+		parseSeqParameterSetRbsp(avcCspsStart);
+	   }
 
    }
    
@@ -741,7 +751,10 @@
        return [sampleStarts, sampleSizes, samplePtss];
 
    }
-
+   
+   var mddatEnd = 0;
+   var avcCspsStart = 0;
+   
    function listAtoms(startOffset, endOfFile, level) {
        var atoms = [];
 
@@ -751,7 +764,8 @@
 
        while (localOffset < endOfFile) {
            var currentAtomOffset = localOffset;
-           localOffset = localOffset + new DataView(data).getUint32(localOffset);
+		   var boxSize = new DataView(data).getUint32(currentAtomOffset);
+           localOffset = localOffset + boxSize;
            atomname = u8toString(new Uint8Array(data, currentAtomOffset + 4, 4));
            atoms.push({
                offset: currentAtomOffset,
@@ -760,14 +774,13 @@
            });
 		   
 		   if(atomname == "mdat"){
-				if(localOffset==(startOffset + 1)){
+				if(localOffset==(currentAtomOffset + 1)){
 					console.log("Detecting 64 bit mdat offset");
 					console.log("Mdat size: "+ (((new DataView(data).getUint32(startOffset+8))+1) * (new DataView(data).getUint32(startOffset+12))));
 					localOffset = startOffset + (((new DataView(data).getUint32(startOffset+8))+1) * (new DataView(data).getUint32(startOffset+12)));
 				}
-		   }
-		   
-           if (atomname == "moov" ||
+				mddatEnd = localOffset;
+		   }else if (atomname == "moov" ||
                atomname == "trak" ||
                atomname == "mdia" ||
                atomname == "minf" ||
@@ -775,9 +788,18 @@
                console.log("Found "+atomname+", going deeper");
                atoms = atoms.concat(listAtoms(currentAtomOffset + 8, localOffset, localLevel + 1));
            }
-           if(atomname == "stsd"){
+           else if(atomname == "stsd"){
                console.log("Found "+atomname+", handle with care");
-               atoms = atoms.concat(listAtoms(currentAtomOffset + 16, localOffset, localLevel + 1));
+			   atoms = atoms.concat(listAtoms(currentAtomOffset + 16, localOffset, localLevel + 1));
+           }
+		   else if(atomname == "avc1"){
+               console.log("Found "+atomname+", handle with care");
+			   atoms = atoms.concat(listAtoms(currentAtomOffset + 86, localOffset, localLevel + 1));
+           }
+		   else if(atomname == "avcC"){
+               console.log("Found "+atomname+", handle with care");
+			   avcCspsStart = currentAtomOffset+16+1;
+			   console.log("Found sequence parameter set NAL at " + avcCspsStart);
            }
        }
        
@@ -894,9 +916,10 @@
        
        SEI="";
        SEIContainer.innerHTML="";
-       h264Profile = "";
-       h264Level = "";
-       h264RefFrames = "";
+	   h264Profile = "";
+	   h264Level = "";
+	   h264RefFrames = "";
+	   avcCspsStart = 0;
        
        e.stopPropagation();
        e.preventDefault();
