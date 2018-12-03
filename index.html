@@ -491,8 +491,26 @@
 			
 			//Todo check scaling matrix present flag
 			
-			bitOffset += 2;
-		
+			bitOffset += 1;
+			seq_scaling_matrix_present_flag =  readBits(rawData, bitOffset, 1)
+			bitOffset += 1;
+						
+			if(seq_scaling_matrix_present_flag==1){
+				console.log("seq_scaling_matrix_present_flag is true");
+				
+				var scaling_list_loop = 0;
+				if(chroma_format_idc != 3){
+					scaling_list_loop = 8;
+				}else{
+					scaling_list_loop = 12;
+				}
+				
+				console.log("Skipping scaling list bits: " + scaling_list_loop);
+				
+				bitOffset += scaling_list_loop;
+				
+			}
+					
 		}		
 		
 		if(profile_idc == 0) profile_idc = "Unknown";
@@ -537,7 +555,8 @@
 			
 			console.log("log2_max_pic_order_cnt_lsb_minus4: " + log2_max_pic_order_cnt_lsb_minus4);
 			
-		}else{
+		}
+		if( pic_order_cnt_type == 1 ){
 			
 			bitOffset += 1;
 			parseTemp = parseExpGolomb(rawData, bitOffset);
