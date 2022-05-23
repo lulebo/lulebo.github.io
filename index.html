@@ -17,19 +17,171 @@
     </script>
     <script type="text/javascript" src="canvasjs.js"></script></head>
     <body>
-        <center><h1>MP4 Analyzer</h1>
+        <center><h1 id="title">MP4 Analyzer</h1>
+		<canvas hidden=true id="preview" width="533" height="300" style="border:1px solid #000000;"></canvas>
             <p>Drop an MP4/MOV file with H264 encoding on this page</p>
         </center>
         
-        <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle fragmented MP4s. Might have other issues with strange MP4 flavors.<br><br>Should now parse Profile and Level correctly for most files</div></p></center></p></div>
+        <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle fragmented MP4s. Might have other issues with strange MP4 flavors.<br><br>Should now parse Profile and Level correctly for most files<br><br>Will show preview of I-frames on supported browsers</div></p></center></p></div>
     <div id="SEIContainer"></div>
         
-        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.36, by Carl Lindqvist 2018</p>
+        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.5, by Carl Lindqvist 2022</p>
           <p>@NESNioreh</p>
         </center>
         
 <script>
-    
+
+var decoderExists = false;
+var decoder;
+var aspect = 1.777777;
+var pixelWidth = 0;
+var pixelHeight = 0;
+
+var seqParamSet;
+
+var canvas = document.querySelector("canvas");
+//canvas.width=1920;
+//canvas.height=1080;
+//var offscreen = canvas.transferControlToOffscreen();
+//document.body.appendChild(canvas);
+let ctx = canvas.getContext('2d');
+
+	async function initdecoder(){
+		if ('VideoEncoder' in window) {
+		  console.log("VideoEncoder is supported");
+		  
+		  const config = {
+			  codec: "avc1.640034",
+			  description: seqParamSet
+			};
+		  
+		  const init = {
+			  output: handleFrame,
+			  error: (e) => {
+				console.log(e);
+			  },
+			};
+		  
+		  decoder = new VideoDecoder(init);
+		  decoder.configure(config);
+		  
+		  decoderExists = true;
+		  
+		  canvas.width = canvas.height*aspect;
+		  canvas.hidden = false;
+		  
+		  //Try to decode first frame
+		  handleMouseMove({dataPoint: {x:0}});
+		  
+		}else{
+		  console.log("No VideoEncoder support :(");
+		}
+	}
+
+	function handleFrame(frame) {
+		//console.log("Frame arrived decoded");
+
+		ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+
+
+		// Close ASAP.
+		frame.close();
+	  
+	}
+
+	//Assume first frame is IDR
+	var lastKeyFrame = 0;
+
+
+	var lastMouseOverX = -1;
+	function handleMouseMove(e){
+		//console.log(e);
+		dataPoint = e.dataPoint;
+		
+		if(dataPoint.x == lastMouseOverX) return;
+		lastMouseOverX = dataPoint.x;
+		
+		if(frameList[dataPoint.x].keyFrame){
+			decodeChunk(new Uint8Array(data, frameList[dataPoint.x].startOffset, frameList[dataPoint.x].size));
+			lastKeyFrame=dataPoint.x;
+		}
+		//After flush, needs to decode IDR frame before any other frame, including I.
+		else if(frameList[dataPoint.x].frameType == "I"){
+			decodeChunk(new Uint8Array(data, frameList[lastKeyFrame].startOffset, frameList[lastKeyFrame].size));
+			decodeChunk(new Uint8Array(data, frameList[dataPoint.x].startOffset, frameList[dataPoint.x].size));
+		}
+		
+		decoder.flush();
+	}
+
+	function decodeChunk(chunkData){
+
+		if(!decoderExists)return;
+		
+		const chunk = new EncodedVideoChunk({
+			//timestamp: new Date().getTime(),
+			timestamp: 0,
+			type: "key",
+			data: chunkData,
+		  });
+		  
+		  decoder.decode(chunk);
+		  
+	}
+	
+	function calculateGOPsize(){
+		
+		let gopDurations = [];
+		
+		let lastKeyFrame=0;
+		for ( var i = 1; i < frameList.length; i++){
+			if (frameList[i].keyFrame){
+				gopDurations.push(i-lastKeyFrame);
+				lastKeyFrame = i;
+			}
+		}
+		
+		gopDurations = gopDurations.sort((a, b) => (b - a));
+		
+		if(gopDurations.length == 0) return -1;
+		
+		let gopDifferent = false;
+		let firstGopDur = gopDurations[0];
+		for(var i = 1; i < gopDurations.length; i++){
+			if (gopDurations[i] != firstGopDur){
+				//Not all gops the same. Need to check for extra keyframes later
+				gopDifferent = true;
+				console.log("GOP size not the same at gopDuration[" + i + "]");
+			}
+		}
+		
+		if(gopDifferent == false) return firstGopDur;
+		
+		if(gopDurations.length > 8){
+			if(gopDurations[0] == gopDurations[Math.floor(gopDurations.length/2)]){
+				return gopDurations[0];
+			}
+		}
+		
+		return -1;
+	}
+	
+	function findExtraKeyframes(){
+		let extraKeyFrames = [];
+		
+		if (gopSize == -1) return extraKeyFrames;
+		
+		for( var i = 0; i < frameList.length; i++){
+			
+			if( frameList[i].keyFrame && i % gopSize!=0 ){
+				extraKeyFrames.push(frameList[i]);
+			}
+		}
+		
+		return extraKeyFrames;
+	}
+	
+	
     var chartContainer = document.getElementById('chartContainer');
     
 	function frameToTimestamp(frame, framerate){
@@ -121,7 +273,11 @@
 	   dataSeries2.dataPoints = dataPoints2;
 	   dataSeries2.axisYType = "secondary";
 	   data.push(dataSeries2);	  
-       data.push(dataSeries);	   
+       data.push(dataSeries);
+
+	   dataSeries.mousemove= function(e){
+	    handleMouseMove(e);
+	   };
 		
        var chart = new CanvasJS.Chart("chartContainer", {
            zoomEnabled: true,
@@ -152,7 +308,26 @@
 	   
 	   if(h264RefFrames != "") h264RefFrames = "<p>Number of ref frames signalled in bitstream: "+h264RefFrames+"</p>";
 	   
-       SEIContainer.innerHTML="<center>" + h264Profile + h264RefFrames + SEI + "<p>Frame rate: "+frameRate+"</p><p>Average bitrate: "+avgBitrate+"kbps</p></center>";
+	   let gopSizeString ="<p>No fixed keyframe distance detected</p>";
+	   
+	   if(gopSize>0){
+		gopSizeString = "<p>Keyframe distance: " + gopSize + " frames</p>";
+	   }
+	   
+	   let extraKeyframesString = "";
+	   if(extraKeyFrames.length>0){
+			
+			extraKeyframesString += "<p>Extra keyframes detected at:<br>";
+	   
+			for(var i = 0; i < extraKeyFrames.length; i++){
+				let framePts = extraKeyFrames[i].pts;
+				extraKeyframesString += "Frame " + extraKeyFrames[i].streamOrder + ", " + frameToTimestamp(framePts-pts[0],timeScale) +"<br>";
+			}
+			
+			extraKeyframesString +="</p>";
+	   }
+	   
+       SEIContainer.innerHTML="<center>" + h264Profile + h264RefFrames + SEI + "<p>Frame rate: "+frameRate+"<br>Resolution: " + pixelWidth + "x" + pixelHeight + "</p>" + gopSizeString + extraKeyframesString + "<p>Average bitrate: "+avgBitrate+"kbps</p></center>";
 
        chart.render();
         
@@ -166,10 +341,13 @@
    var frameList = [];
    var SEI = "";
    var SEIContainer = document.getElementById('SEIContainer');
+   var title = document.getElementById('title');
 
    var h264Profile = "";
    var h264Level = "";
    var h264RefFrames = "";
+   var gopSize = -1;
+   var extraKeyFrames = [];
    
    
    var exampleFrame = {
@@ -640,6 +818,7 @@
                    frameList.push({
                        keyFrame: nalUnitType == 5,
                        streamOrder: i,
+					   startOffset: samples[i],
                        size: sampleSizes[i],
                        frameType: headerData.frameType,
                        pts: ptss[i]
@@ -825,13 +1004,20 @@
            }
 		   else if(atomname == "avc1"){
                console.log("Found "+atomname+", handle with care");
+			   pixelWidth = new DataView(data).getUint16(currentAtomOffset+32);
+			   pixelHeight = new DataView(data).getUint16(currentAtomOffset+34);
 			   atoms = atoms.concat(listAtoms(currentAtomOffset + 86, localOffset, localLevel + 1));
            }
 		   else if(atomname == "avcC"){
                console.log("Found "+atomname+", handle with care");
 			   avcCspsStart = currentAtomOffset+16+1;
+			   
+			   //Extract config for decoder
+			   seqParamSet = new Uint8Array(data, avcCspsStart-1-8, boxSize);
+			   console.log(seqParamSet);
 			   console.log("Found sequence parameter set NAL at " + avcCspsStart);
            }
+		   
        }
        
        console.log("All done with atoms");
@@ -904,6 +1090,20 @@
                break;
            }
        }
+	   
+	   for (var i = avcTrack; i<avcTrack+3; i++){
+			if(atoms[i].name=="tkhd"){
+					console.log("Found "+atomname+", trying to parse aspect ratio");
+					const width = new DataView(data).getUint32(atoms[i].offset + 84);
+					const tkhdwidth = createHexString(new Uint8Array(data, atoms[i].offset + 80, 16));
+					console.log(tkhdwidth);
+					console.log("Width: " + width);
+					const height = new DataView(data).getUint32(atoms[i].offset + 88);
+					console.log("Height: " + height);
+					aspect = width/height;
+					break;
+			}
+	   }
        
        if(avc1 == false){
            console.log("Could not find h264 track");
@@ -936,13 +1136,15 @@
            var samples = getSampleInfo(stsz, stco, stsc, stts, ctts);
            parseH264Frames(samples);
            frameList.sort(sortByPts);
+		   gopSize = calculateGOPsize();
+		   extraKeyFrames = findExtraKeyframes();
            drawVideoChart(frameList);
        }
    }
 
    // Get file data on drop
    dropZone.addEventListener('drop', function(e) {
-       
+       	   
        chartContainer.innerHTML="<center><p>Loading...</p></center>";
        
        SEI="";
@@ -951,6 +1153,8 @@
 	   h264Level = "";
 	   h264RefFrames = "";
 	   avcCspsStart = 0;
+	   gopSize = -1;
+	   extraKeyFrames = [];
        
        e.stopPropagation();
        e.preventDefault();
@@ -958,14 +1162,29 @@
        for (var i = 0, file; file = files[i]; i++) {
            //if (file.type.match(/image.*/)) {
            var reader = new FileReader();
+		   
+		   reader.addEventListener('progress', event => {
+				let percentage = Math.floor((event.loaded / event.total) * 100);
+				chartContainer.innerHTML="<center><p>Loading " + percentage + "%</p></center>";
+				if(percentage>95)chartContainer.innerHTML="<center><p>Calculating..</p></center>";
+		   });
+		   
+		   reader.addEventListener('error', event => { console.log(event); chartContainer.innerHTML="<center><h1>Error. File too big? (>2GB?)</h1></center>";});
+		   
+		   console.log(file);
+		   
+		   title.innerHTML = file.name;
 
            reader.onload = function(e2) { // finished reading file data.
-               data = e2.target.result;
+			   data = e2.target.result;
                parseMp4();
+			   initdecoder();
            }
            reader.readAsArrayBuffer(file); // start reading the file data.
            //}
        }
+	   
+	   
    });
 </script>
     </body>
