@@ -943,7 +943,7 @@ let ctx = canvas.getContext('2d');
        if(ctts != undefined){
            for (var i = 0; i < cttsEntries; i++) {
                var sampleCount = new DataView(data).getUint32(ctts.offset + 16 + (8 * i));
-               var sampleOffset = new DataView(data).getUint32(ctts.offset + 20 + (8 * i));
+               var sampleOffset = new DataView(data).getInt32(ctts.offset + 20 + (8 * i));
                for (var j = 0; j < sampleCount; j++) {
                    currentSample++;
                    if (i == 0 && j == 0) {
