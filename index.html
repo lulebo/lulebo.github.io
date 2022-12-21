@@ -20,14 +20,14 @@
 		<canvas hidden=true id="preview" width="533" height="300" style="border:1px solid #000000;"></canvas>
             <p>Drop an MP4/MOV file with H264 encoding on this page</p>
         </center>
-        
+
         <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle fragmented MP4s. Might have other issues with strange MP4 flavors.<br><br>Should now parse Profile and Level correctly for most files<br><br>Will show preview of I-frames on supported browsers</div></p></center></p></div>
     <div id="SEIContainer"></div>
-        
+
         <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.5, by Carl Lindqvist 2022</p>
           <p>@NESNioreh</p>
         </center>
-        
+
 <script>
 
 var decoderExists = false;
@@ -48,30 +48,30 @@ let ctx = canvas.getContext('2d');
 	async function initdecoder(){
 		if ('VideoEncoder' in window) {
 		  console.log("VideoEncoder is supported");
-		  
+
 		  const config = {
 			  codec: "avc1.640034",
 			  description: seqParamSet
 			};
-		  
+
 		  const init = {
 			  output: handleFrame,
 			  error: (e) => {
 				console.log(e);
 			  },
 			};
-		  
+
 		  decoder = new VideoDecoder(init);
 		  decoder.configure(config);
-		  
+
 		  decoderExists = true;
-		  
+
 		  canvas.width = canvas.height*aspect;
 		  canvas.hidden = false;
-		  
+
 		  //Try to decode first frame
 		  handleMouseMove({dataPoint: {x:0}});
-		  
+
 		}else{
 		  console.log("No VideoEncoder support :(");
 		}
@@ -84,12 +84,12 @@ let ctx = canvas.getContext('2d');
 
 		// Close ASAP.
 		frame.close();
-		
+
 		gtag('event', 'show_iframe', {
 			  'event_category' : 'engagement',
 			  'event_label' : 'View preview of I-frame'
 			});
-	  
+
 	}
 
 	//Assume first frame is IDR
@@ -100,10 +100,10 @@ let ctx = canvas.getContext('2d');
 	function handleMouseMove(e){
 		//console.log(e);
 		dataPoint = e.dataPoint;
-		
+
 		if(dataPoint.x == lastMouseOverX) return;
 		lastMouseOverX = dataPoint.x;
-		
+
 		if(frameList[dataPoint.x].keyFrame){
 			decodeChunk(new Uint8Array(data, frameList[dataPoint.x].startOffset, frameList[dataPoint.x].size));
 			lastKeyFrame=dataPoint.x;
@@ -113,29 +113,29 @@ let ctx = canvas.getContext('2d');
 			decodeChunk(new Uint8Array(data, frameList[lastKeyFrame].startOffset, frameList[lastKeyFrame].size));
 			decodeChunk(new Uint8Array(data, frameList[dataPoint.x].startOffset, frameList[dataPoint.x].size));
 		}
-		
+
 		decoder.flush();
 	}
 
 	function decodeChunk(chunkData){
 
 		if(!decoderExists)return;
-		
+
 		const chunk = new EncodedVideoChunk({
 			//timestamp: new Date().getTime(),
 			timestamp: 0,
 			type: "key",
 			data: chunkData,
 		  });
-		  
+
 		  decoder.decode(chunk);
-		  
+
 	}
-	
+
 	function calculateGOPsize(){
-		
+
 		let gopDurations = [];
-		
+
 		let lastKeyFrame=0;
 		for ( var i = 1; i < frameList.length; i++){
 			if (frameList[i].keyFrame){
@@ -143,11 +143,11 @@ let ctx = canvas.getContext('2d');
 				lastKeyFrame = i;
 			}
 		}
-		
+
 		gopDurations = gopDurations.sort((a, b) => (b - a));
-		
+
 		if(gopDurations.length == 0) return -1;
-		
+
 		let gopDifferent = false;
 		let firstGopDur = gopDurations[0];
 		for(var i = 1; i < gopDurations.length; i++){
@@ -157,36 +157,36 @@ let ctx = canvas.getContext('2d');
 				console.log("GOP size not the same at gopDuration[" + i + "]");
 			}
 		}
-		
+
 		if(gopDifferent == false) return firstGopDur;
-		
+
 		if(gopDurations.length > 8){
 			if(gopDurations[0] == gopDurations[Math.floor(gopDurations.length/2)]){
 				return gopDurations[0];
 			}
 		}
-		
+
 		return -1;
 	}
-	
+
 	function findExtraKeyframes(){
 		let extraKeyFrames = [];
-		
+
 		if (gopSize == -1) return extraKeyFrames;
-		
+
 		for( var i = 0; i < frameList.length; i++){
-			
+
 			if( frameList[i].keyFrame && i % gopSize!=0 ){
 				extraKeyFrames.push(frameList[i]);
 			}
 		}
-		
+
 		return extraKeyFrames;
 	}
-	
-	
+
+
     var chartContainer = document.getElementById('chartContainer');
-    
+
 	function frameToTimestamp(frame, framerate){
 		var seconds = frame / framerate;
 		var minutes = seconds / 60;
@@ -194,10 +194,10 @@ let ctx = canvas.getContext('2d');
 		var milliseconds = Math.floor(((frame % framerate)/framerate)*1000);
 		seconds = Math.floor(seconds % 60);
 		minutes = Math.floor(minutes % 60);
-		
+
 		return "" + ("0" + hours).slice(-2) + ":" +("0" + minutes).slice(-2) + ":" + ("0" + seconds).slice(-2) + ":" + ("00" + milliseconds).slice(-3);
 	}
-	
+
     function drawVideoChart(frameList) {
        var totalSize = 0;
        var bitrate = [];
@@ -229,17 +229,17 @@ let ctx = canvas.getContext('2d');
 
            pts.push(frameList[i].pts);
            dts.push(frameList[i].streamOrder);
-		   
+
 		   GOPbitrate[GOPbitrate.length - 1].size += frameSize;
 		   GOPbitrate[GOPbitrate.length - 1].gopFrameLength += 1;
        }
-       
+
 	   var lastPts = pts[pts.length-1];
 	   var frameCount = pts.length;
-	   
+
 	   var frameRate = (1.00 * timeScale)/((1.00 * lastPts)/frameCount);
 	   console.log("Framerate: " + frameRate);
-	   
+
 	   //plot the frames
        var data = [];
        var dataSeries = {
@@ -259,7 +259,7 @@ let ctx = canvas.getContext('2d');
        }
        dataSeries.dataPoints = dataPoints;
        //data.push(dataSeries);
-	   
+
 	   //plot the bitrate
 	   var dataSeries2 = {
 	       type: "splineArea",
@@ -275,13 +275,13 @@ let ctx = canvas.getContext('2d');
 	   }
 	   dataSeries2.dataPoints = dataPoints2;
 	   dataSeries2.axisYType = "secondary";
-	   data.push(dataSeries2);	  
+	   data.push(dataSeries2);
        data.push(dataSeries);
 
 	   dataSeries.mousemove= function(e){
 	    handleMouseMove(e);
 	   };
-		
+
        var chart = new CanvasJS.Chart("chartContainer", {
            zoomEnabled: true,
            panEnabled: true,
@@ -304,37 +304,37 @@ let ctx = canvas.getContext('2d');
        });
 
        var avgBitrate = Math.round((totalSize / (pts.length / frameRate)) * 8 / 1000);
-	
+
 	   if(SEI != "") SEI = "<p>SEI data: "+SEI+"</p>";
-	   
+
 	   if(h264Profile != "") h264Profile = "<p>"+h264Profile+", level "+h264Level+"</p>";
-	   
+
 	   if(h264RefFrames != "") h264RefFrames = "<p>Number of ref frames signalled in bitstream: "+h264RefFrames+"</p>";
-	   
+
 	   let gopSizeString ="<p>No fixed keyframe distance detected</p>";
-	   
+
 	   if(gopSize>0){
 		gopSizeString = "<p>Keyframe distance: " + gopSize + " frames</p>";
 	   }
-	   
+
 	   let extraKeyframesString = "";
 	   if(extraKeyFrames.length>0){
-			
+
 			extraKeyframesString += "<p>Extra keyframes detected at:<br>";
-	   
+
 			for(var i = 0; i < extraKeyFrames.length; i++){
 				let framePts = extraKeyFrames[i].pts;
 				extraKeyframesString += "Frame " + extraKeyFrames[i].streamOrder + ", " + frameToTimestamp(framePts-pts[0],timeScale) +"<br>";
 			}
-			
+
 			extraKeyframesString +="</p>";
 	   }
-	   
+
        SEIContainer.innerHTML="<center>" + h264Profile + h264RefFrames + SEI + "<p>Frame rate: "+frameRate+"<br>Resolution: " + pixelWidth + "x" + pixelHeight + "</p>" + gopSizeString + extraKeyframesString + "<p>Average bitrate: "+avgBitrate+"kbps</p></center>";
 
        chart.render();
-        
-    
+
+
    }
 
 
@@ -351,8 +351,8 @@ let ctx = canvas.getContext('2d');
    var h264RefFrames = "";
    var gopSize = -1;
    var extraKeyFrames = [];
-   
-   
+
+
    var exampleFrame = {
        streamOrder: 75,
        size: 12345,
@@ -420,7 +420,7 @@ let ctx = canvas.getContext('2d');
            console.log("UUID: " + _uuid);
 
            var messageLength = payloadSize - _position;
-           
+
            if(messageLength>0){
 
                console.log("Message:");
@@ -516,14 +516,14 @@ let ctx = canvas.getContext('2d');
 	   parseTemp = parseExpGolomb(rawData, bitOffset);
        var pictParameterSetId = parseTemp[0];
        bitOffset += parseTemp[1];
-	   
+
 	   parseTemp = parseExpGolomb(rawData, bitOffset);
 	   var frameNum = parseTemp[0];
        bitOffset += parseTemp[1];
 	   */
-	   
+
 	   //console.log("pictParameterSetId in slice header: "+pictParameterSetId);
-	   
+
 
        /*
        slice_type Name of slice_type
@@ -536,7 +536,7 @@ let ctx = canvas.getContext('2d');
        6 B (B slice)
        7 I (I slice)
        8 SP (SP slice)
-       9 SI (SI slice) 
+       9 SI (SI slice)
        */
 
        var frameType = sliceType;
@@ -579,121 +579,121 @@ let ctx = canvas.getContext('2d');
        }
 
    }
-   
+
    //var slices = 1;
-   
+
    function parsePicParameterSetRbsp(offset){
-		
+
 		/*
 		 pic_parameter_set_id 1 ue(v)
 		 seq_parameter_set_id 1 ue(v)
 		 entropy_coding_mode_flag 1 u(1)
 		 pic_order_present_flag 1 u(1)
-		 num_slice_groups_minus1 1 ue(v) 
+		 num_slice_groups_minus1 1 ue(v)
 		*/
-		
+
 		//console.log("Found pict_parameter_set_rbsp");
-		
+
 		var rawData = new Uint8Array(data, offset, 32);
 		var bitOffset = 0;
 
 		var parseTemp = parseExpGolomb(rawData, bitOffset);
 		var pic_parameter_set_id = parseTemp[0];
 		bitOffset += parseTemp[1];
-		
+
 		console.log("pic_parameter_set_id: " + pic_parameter_set_id);
-		
+
 		parseTemp = parseExpGolomb(rawData, bitOffset);
 		var seq_parameter_set_id = parseTemp[0];
 		bitOffset += parseTemp[1];
-		
+
 		console.log("seq_parameter_set_id: " + seq_parameter_set_id);
-		
+
 		bitOffset += 2;
-		
+
 		parseTemp = parseExpGolomb(rawData, bitOffset);
 		var slices = parseTemp[0];
-		
+
 		console.log("Slices minus 1: " + slices);
-		
+
    }
-   
+
 	function parseSeqParameterSetRbsp(offset){
 		console.log("Parsing seqParameterSet");
-		
+
 		var rawData = new Uint8Array(data, offset + 3, 64);
 		var bitOffset = 0;
-		
+
 		var hex = new Uint8Array(data, offset, 1);
 		var profile_idc = Number(hex[0]);
-		
+
 		console.log("profile_idc: " + profile_idc);
-		
+
 		hex = new Uint8Array(data, offset + 2, 1);
 		var level_idc = Number(hex[0]);
-		
+
 		console.log("level_idc: " + level_idc);
-		
+
 		var parseTemp = parseExpGolomb(rawData, bitOffset);
 		var seq_parameter_set_id = parseTemp[0];
 		bitOffset += parseTemp[1];
-		
+
 		console.log("seq_parameter_set_id: " + seq_parameter_set_id);
-		
+
 		if( profile_idc == 100 || profile_idc == 110 ||
 			profile_idc == 122 || profile_idc == 244 || profile_idc == 44 ||
 			profile_idc == 83 || profile_idc == 86 || profile_idc == 118 ||
 			profile_idc == 128 || profile_idc == 138 || profile_idc == 139 ||
 			profile_idc == 134 || profile_idc == 135 ) {
-		
+
 			parseTemp = parseExpGolomb(rawData, bitOffset);
 			var chroma_format_idc = parseTemp[0];
 			bitOffset += parseTemp[1];
-			
+
 			console.log("chroma_format_idc: " + chroma_format_idc);
-			
+
 			if( chroma_format_idc == 3 ){
-			
+
 				bitOffset += 1;
-			
+
 			}
-			
+
 			parseTemp = parseExpGolomb(rawData, bitOffset);
 			var bit_depth_luma_minus8 = parseTemp[0];
 			bitOffset += parseTemp[1];
-			
+
 			console.log("bit_depth_luma_minus8: " + bit_depth_luma_minus8);
-			
+
 			parseTemp = parseExpGolomb(rawData, bitOffset);
 			var bit_depth_chroma_minus8 = parseTemp[0];
 			bitOffset += parseTemp[1];
-			
+
 			console.log("bit_depth_chroma_minus8: " + bit_depth_chroma_minus8);
-			
+
 			//Todo check scaling matrix present flag
-			
+
 			bitOffset += 1;
 			seq_scaling_matrix_present_flag =  readBits(rawData, bitOffset, 1)
 			bitOffset += 1;
-						
+
 			if(seq_scaling_matrix_present_flag==1){
 				console.log("seq_scaling_matrix_present_flag is true");
-				
+
 				var scaling_list_loop = 0;
 				if(chroma_format_idc != 3){
 					scaling_list_loop = 8;
 				}else{
 					scaling_list_loop = 12;
 				}
-				
+
 				console.log("Skipping scaling list bits: " + scaling_list_loop);
-				
+
 				bitOffset += scaling_list_loop;
-				
+
 			}
-					
-		}		
-		
+
+		}
+
 		if(profile_idc == 0) profile_idc = "Unknown";
 		if(profile_idc == 66) profile_idc = "Baseline";
 		if(profile_idc == 77) profile_idc = "Main";
@@ -710,69 +710,69 @@ let ctx = canvas.getContext('2d');
 		if(profile_idc == 257) profile_idc = "UCConstrainedHigh";
 		if(profile_idc == 258) profile_idc = "UCScalableConstrainedBase";
 		if(profile_idc == 259) profile_idc = "UCScalableConstrainedHigh";
-		
+
 		console.log("h264 info: " + profile_idc +" Profile, level " + level_idc/10);
 
 		h264Profile = profile_idc + " Profile";
 		h264Level = "" + level_idc/10;
-		
+
 		parseTemp = parseExpGolomb(rawData, bitOffset);
 		var log2_max_frame_num_minus4 = parseTemp[0];
 		bitOffset += parseTemp[1];
-		
+
 		console.log("log2_max_frame_num_minus4: " + log2_max_frame_num_minus4);
-		
+
 		parseTemp = parseExpGolomb(rawData, bitOffset);
 		var pic_order_cnt_type = parseTemp[0];
 		bitOffset += parseTemp[1];
-		
+
 		console.log("pic_order_cnt_type: " + pic_order_cnt_type);
-		
+
 		if( pic_order_cnt_type == 0 ){
-			
+
 			parseTemp = parseExpGolomb(rawData, bitOffset);
 			var log2_max_pic_order_cnt_lsb_minus4 = parseTemp[0];
 			bitOffset += parseTemp[1];
-			
+
 			console.log("log2_max_pic_order_cnt_lsb_minus4: " + log2_max_pic_order_cnt_lsb_minus4);
-			
+
 		}
 		if( pic_order_cnt_type == 1 ){
-			
+
 			bitOffset += 1;
 			parseTemp = parseExpGolomb(rawData, bitOffset);
 			var offset_for_non_ref_pic = parseTemp[0];
 			bitOffset += parseTemp[1];
-			
+
 			console.log("offset_for_non_ref_pic: " + offset_for_non_ref_pic);
-			
+
 			parseTemp = parseExpGolomb(rawData, bitOffset);
 			var offset_for_top_to_bottom_field = parseTemp[0];
 			bitOffset += parseTemp[1];
-			
+
 			console.log("offset_for_top_to_bottom_field: " + offset_for_top_to_bottom_field);
-			
+
 			parseTemp = parseExpGolomb(rawData, bitOffset);
 			var num_ref_frames_in_pic_order_cnt_cycle = parseTemp[0];
 			bitOffset += parseTemp[1];
-			
+
 			console.log("num_ref_frames_in_pic_order_cnt_cycle: " + num_ref_frames_in_pic_order_cnt_cycle);
-			
+
 			for( var f = 0; f < num_ref_frames_in_pic_order_cnt_cycle; f++ ){
 				parseTemp = parseExpGolomb(rawData, bitOffset);
 				var offset_for_ref_frame = parseTemp[0];
 				bitOffset += parseTemp[1];
-				
+
 				console.log("offset_for_ref_frame "+f+": " + offset_for_ref_frame);
 			}
 		}
-		
+
 		parseTemp = parseExpGolomb(rawData, bitOffset);
 		var num_ref_frames = parseTemp[0];
 		bitOffset += parseTemp[1];
-		
+
 		console.log("num_ref_frames: " + num_ref_frames);
-		
+
 		h264RefFrames = "" + num_ref_frames;
 	}
 
@@ -783,19 +783,19 @@ let ctx = canvas.getContext('2d');
        var sampleSizes = samples[1];
        var ptss = samples[2];
        var samples = samples[0];
-       
+
        frameList = [];
 
 	   var seqDataFound = false;
-	   
+
        for (var i = 0; i < samples.length; i++) {
 
            var _offset = 0;
 
 		   var frameFound = false;
-		   
+
 		   while (_offset < sampleSizes[i]) {
-		   
+
 			   var hex = new Uint8Array(data, samples[i] + _offset + 4, 1);
                var nalSize = new DataView(data).getUint32(samples[i] + _offset);
 
@@ -804,13 +804,13 @@ let ctx = canvas.getContext('2d');
                if (nalUnitType == 6) {
                    parseSEIData(samples[i] + _offset);
                }
-			   
+
 			   if (nalUnitType == 7 && !seqDataFound) {
 					seqDataFound = true;
 					console.log("Found seq parameter set NAL in bitstream at " + (samples[i] + _offset + 5));
 					parseSeqParameterSetRbsp(samples[i] + _offset + 5);
                }
-			   
+
 			   /*if (nalUnitType == 8) {
                    parsePicParameterSetRbsp(samples[i] + _offset + 5);
                }*/
@@ -827,18 +827,18 @@ let ctx = canvas.getContext('2d');
                        pts: ptss[i]
                    });
                }
-			   
+
 			   _offset += nalSize + 4;
            }
        }
-	   
+
 	   if(!seqDataFound && avcCspsStart != 0){
 		console.log("No seq parameter set found, but was in avcC box at "+avcCspsStart+". Reading from that.");
 		parseSeqParameterSetRbsp(avcCspsStart);
 	   }
 
    }
-   
+
    var timeScale = 0;
    function parseTimeScale(mdhd){
        if(mdhd != undefined){
@@ -958,16 +958,16 @@ let ctx = canvas.getContext('2d');
            for (var i = 0; i < sampleDeltas.length; i++){
                samplePtss.push(currentTimeStamp + sampleDeltas[i]);
                currentTimeStamp+=sampleDeltas[i];
-           }           
+           }
        }
 
        return [sampleStarts, sampleSizes, samplePtss];
 
    }
-   
+
    var mddatEnd = 0;
    var avcCspsStart = 0;
-   
+
    function listAtoms(startOffset, endOfFile, level) {
        var atoms = [];
 
@@ -985,7 +985,7 @@ let ctx = canvas.getContext('2d');
                name: atomname,
                level: localLevel
            });
-		   
+
 		   if(atomname == "mdat"){
 				if(localOffset==(currentAtomOffset + 1)){
 					console.log("Detecting 64 bit mdat offset");
@@ -1014,15 +1014,15 @@ let ctx = canvas.getContext('2d');
 		   else if(atomname == "avcC"){
                console.log("Found "+atomname+", handle with care");
 			   avcCspsStart = currentAtomOffset+16+1;
-			   
+
 			   //Extract config for decoder
 			   seqParamSet = new Uint8Array(data, avcCspsStart-1-8, boxSize);
 			   console.log(seqParamSet);
 			   console.log("Found sequence parameter set NAL at " + avcCspsStart);
            }
-		   
+
        }
-       
+
        console.log("All done with atoms");
 
        return atoms;
@@ -1049,7 +1049,7 @@ let ctx = canvas.getContext('2d');
            name: atomname,
            level: 0
        });
-       
+
        var majorBrand;
        var majorBrandVersion;
        var compatibleBrands = [];
@@ -1069,9 +1069,9 @@ let ctx = canvas.getContext('2d');
        }
 
        atoms = atoms.concat(listAtoms(offset, data.byteLength, 0));
-       
-       
-       
+
+
+
        for (var i = 0; i < atoms.length; i++) {
            var localLevel = atoms[i].level;
            var levelIndicator = "";
@@ -1081,7 +1081,7 @@ let ctx = canvas.getContext('2d');
            console.log(levelIndicator + "[" + atoms[i].name + "]");
 
        }
-       
+
        var avc1 = false;
        var avcTrack = 0;
        for (var i = 0; i<atoms.length; i++){
@@ -1093,7 +1093,7 @@ let ctx = canvas.getContext('2d');
                break;
            }
        }
-	   
+
 	   for (var i = avcTrack; i<avcTrack+3; i++){
 			if(atoms[i].name=="tkhd"){
 					console.log("Found "+atomname+", trying to parse aspect ratio");
@@ -1107,7 +1107,7 @@ let ctx = canvas.getContext('2d');
 					break;
 			}
 	   }
-       
+
        if(avc1 == false){
            console.log("Could not find h264 track");
            chartContainer.innerHTML="<center><p style=\"color:red;\">No h264 track found<p><center>"
@@ -1142,7 +1142,7 @@ let ctx = canvas.getContext('2d');
 		   gopSize = calculateGOPsize();
 		   extraKeyFrames = findExtraKeyframes();
            drawVideoChart(frameList);
-		   
+
 		   gtag('event', 'draw_video_chart', {
 			  'event_category' : 'engagement',
 			  'event_label' : 'Show Frame Graph'
@@ -1152,9 +1152,9 @@ let ctx = canvas.getContext('2d');
 
    // Get file data on drop
    dropZone.addEventListener('drop', function(e) {
-       	   
+
        chartContainer.innerHTML="<center><p>Loading...</p></center>";
-       
+
        SEI="";
        SEIContainer.innerHTML="";
 	   h264Profile = "";
@@ -1163,30 +1163,30 @@ let ctx = canvas.getContext('2d');
 	   avcCspsStart = 0;
 	   gopSize = -1;
 	   extraKeyFrames = [];
-       
+
        e.stopPropagation();
        e.preventDefault();
        var files = e.dataTransfer.files; // Array of all files
        for (var i = 0, file; file = files[i]; i++) {
-	   
+
 			gtag('event', 'drop_file', {
 			  'event_category' : 'engagement',
 			  'event_label' : 'Drop file on page'
 			});
-			
+
            //if (file.type.match(/image.*/)) {
            var reader = new FileReader();
-		   
+
 		   reader.addEventListener('progress', event => {
 				let percentage = Math.floor((event.loaded / event.total) * 100);
 				chartContainer.innerHTML="<center><p>Loading " + percentage + "%</p></center>";
 				if(percentage>95)chartContainer.innerHTML="<center><p>Calculating..</p></center>";
 		   });
-		   
+
 		   reader.addEventListener('error', event => { console.log(event); chartContainer.innerHTML="<center><h1>Error. File too big? (>2GB?)</h1></center>";});
-		   
+
 		   console.log(file);
-		   
+
 		   title.innerHTML = file.name;
 
            reader.onload = function(e2) { // finished reading file data.
@@ -1197,8 +1197,8 @@ let ctx = canvas.getContext('2d');
            reader.readAsArrayBuffer(file); // start reading the file data.
            //}
        }
-	   
-	   
+
+
    });
 </script>
     </body>
