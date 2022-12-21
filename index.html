@@ -796,32 +796,33 @@ let ctx = canvas.getContext('2d');
 
 		   while (_offset < sampleSizes[i]) {
 
-			   var hex = new Uint8Array(data, samples[i] + _offset + 4, 1);
-               var nalSize = new DataView(data).getUint32(samples[i] + _offset);
+			   var value = parseInt(samples[i], 10);
+			   var hex = new Uint8Array(data, value + _offset + 4, 1);
+               var nalSize = new DataView(data).getUint32(value + _offset);
 
                var nalUnitType = Number(hex[0] & 0x1F);
 
                if (nalUnitType == 6) {
-                   parseSEIData(samples[i] + _offset);
+                   parseSEIData(value + _offset);
                }
 
 			   if (nalUnitType == 7 && !seqDataFound) {
 					seqDataFound = true;
-					console.log("Found seq parameter set NAL in bitstream at " + (samples[i] + _offset + 5));
-					parseSeqParameterSetRbsp(samples[i] + _offset + 5);
+					console.log("Found seq parameter set NAL in bitstream at " + (value + _offset + 5));
+					parseSeqParameterSetRbsp(value + _offset + 5);
                }
 
 			   /*if (nalUnitType == 8) {
-                   parsePicParameterSetRbsp(samples[i] + _offset + 5);
+                   parsePicParameterSetRbsp(value + _offset + 5);
                }*/
 
                if (nalUnitType > 0 && nalUnitType < 6 && !frameFound) {
 					frameFound = true;
-                   var headerData = parseSliceHeader(samples[i] + _offset + 5);
+                   var headerData = parseSliceHeader(value + _offset + 5);
                    frameList.push({
                        keyFrame: nalUnitType == 5,
                        streamOrder: i,
-					   startOffset: samples[i],
+					   startOffset: value,
                        size: sampleSizes[i],
                        frameType: headerData.frameType,
                        pts: ptss[i]
@@ -853,7 +854,7 @@ let ctx = canvas.getContext('2d');
 	   console.log("timescale: " + timeScale);
    }
 
-   function getSampleInfo(stsz, stco, stsc, stts, ctts) {
+   function getSampleInfo(stsz, stco_co64, stsc, stts, ctts, stco_co64_type) {
 
        var samplesPerChunk = [];
        var chunkStarts = [];
@@ -881,13 +882,20 @@ let ctx = canvas.getContext('2d');
            }
        }
 
-       //Read Chunk starts (stco)
+       //Read Chunk starts (stco_co64)
 
-       var chunks = new DataView(data).getUint32(stco.offset + 12);
+       var chunks = new DataView(data).getUint32(stco_co64.offset + 12);
 
+       console.log(chunks);
        for (var i = 0; i < chunks; i++) {
-           chunkStarts.push(new DataView(data).getUint32(stco.offset + 16 + (4 * i)));
+           if (stco_co64_type == "co64") {
+               chunkStarts.push(new DataView(data).getBigUint64(stco_co64.offset + 16 + (8 * i)));
+           }
+           else {
+               chunkStarts.push(new DataView(data).getUint32(stco_co64.offset + 16 + (4 * i)));
+           }
        }
+       console.log(chunkStarts);
 
        //Read Sample starts (stsz)
 
@@ -912,7 +920,7 @@ let ctx = canvas.getContext('2d');
 
            var _sampleSize = new DataView(data).getUint32(stsz.offset + 20 + (i * 4));
 
-           sampleStarts.push(chunkStarts[sampleLocation] + sampleSizeAcc);
+           sampleStarts.push(BigInt(chunkStarts[sampleLocation]) + BigInt(sampleSizeAcc));
            sampleSizes.push(_sampleSize);
            sampleSizeAcc += _sampleSize;
        }
@@ -1121,12 +1129,13 @@ let ctx = canvas.getContext('2d');
            }
            if (atoms[j].name == "stsz") stsz = atoms[j];
            if (atoms[j].name == "stco") stco = atoms[j];
+           if (atoms[j].name == "co64") co64 = atoms[j];
            if (atoms[j].name == "stsc") stsc = atoms[j];
            if (atoms[j].name == "stts") stts = atoms[j];
            if (atoms[j].name == "ctts") ctts = atoms[j];
 		   if (atoms[j].name == "mdhd") mdhd = atoms[j];
        }
-       if (stsz == undefined || stco == undefined || stsc == undefined || stts == undefined) {
+       if (stsz == undefined || (stco == undefined && co64 == undefined) || stsc == undefined || stts == undefined) {
            console.log("Could not find correct atoms for track");
            chartContainer.innerHTML="<center><p style=\"color:red;\">Avc track is missing importans atoms/boxes<p><center>"
            return false;
@@ -1135,8 +1144,8 @@ let ctx = canvas.getContext('2d');
 	       parseTimeScale(mdhd);
            if (ctts == undefined){
                console.log("No ctts atom found. Baseline? Or just missing")
-           }
-           var samples = getSampleInfo(stsz, stco, stsc, stts, ctts);
+		   }
+           var samples = getSampleInfo(stsz, (stco == undefined) ? co64 : stco, stsc, stts, ctts, (stco == undefined) ? "co64" : "stco");
            parseH264Frames(samples);
            frameList.sort(sortByPts);
 		   gopSize = calculateGOPsize();
