@@ -21,10 +21,20 @@
             <p>Drop an MP4/MOV file with H264 encoding on this page</p>
         </center>
 
-        <div id="chartContainer" style="height: 300px; width: 100%;"><center><p><div style="width: 300px;">Should work for most MP4 files containing h264/avc video. Does not handle fragmented MP4s. Might have other issues with strange MP4 flavors.<br><br>Should now parse Profile and Level correctly for most files<br><br>Will show preview of I-frames on supported browsers</div></p></center></p></div>
+        <div id="chartContainer" style="height: 300px; width: 100%;">
+            <center>
+                <div style="width: 300px;">
+                    Should work for most MP4 files containing h264/avc video. Does not handle fragmented MP4s. Might have other issues with strange MP4 flavors.
+                    <br><br>
+                    Should now parse Profile and Level correctly for most files
+                    <br><br>
+                    Will show preview of I-frames on supported browsers
+                </div>
+            </center>
+        </div>
     <div id="SEIContainer"></div>
 
-        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.5, by Carl Lindqvist 2022</p>
+        <center><p><font color="red">IDR frame</font><br/><font color="orange">I frame</font><br/><font color="blue">P frame</font><br/><font color="Green">B frame</font><br/></p><p>Version 0.6, by Carl Lindqvist 2024</p>
           <p>@NESNioreh</p>
         </center>
 
@@ -313,6 +323,9 @@ let ctx = canvas.getContext('2d');
 
 	   let gopSizeString ="<p>No fixed keyframe distance detected</p>";
 
+	   let colorInfoString = "";
+	   if(colourPrimaries != "") colorInfoString = "<p>Colour primaries: " + colourPrimaries + "<br>Transfer Characteristics: " + transferCharacteristics + "<br>Matrix Coefficients: "+ matrixCoefficients +"</p>";
+
 	   if(gopSize>0){
 		gopSizeString = "<p>Keyframe distance: " + gopSize + " frames</p>";
 	   }
@@ -330,7 +343,7 @@ let ctx = canvas.getContext('2d');
 			extraKeyframesString +="</p>";
 	   }
 
-       SEIContainer.innerHTML="<center>" + h264Profile + h264RefFrames + SEI + "<p>Frame rate: "+frameRate+"<br>Resolution: " + pixelWidth + "x" + pixelHeight + "</p>" + gopSizeString + extraKeyframesString + "<p>Average bitrate: "+avgBitrate+"kbps</p></center>";
+       SEIContainer.innerHTML="<center>" + h264Profile + h264RefFrames + SEI + "<p>Frame rate: "+frameRate+"<br>Resolution: " + pixelWidth + "x" + pixelHeight + "</p>" + colorInfoString + gopSizeString + extraKeyframesString + "<p>Average bitrate: "+avgBitrate+"kbps</p></center>";
 
        chart.render();
 
@@ -351,6 +364,10 @@ let ctx = canvas.getContext('2d');
    var h264RefFrames = "";
    var gopSize = -1;
    var extraKeyFrames = [];
+
+   var colourPrimaries = "No info";
+   var transferCharacteristics = "No info";
+   var matrixCoefficients = "No info";
 
 
    var exampleFrame = {
@@ -774,6 +791,139 @@ let ctx = canvas.getContext('2d');
 		console.log("num_ref_frames: " + num_ref_frames);
 
 		h264RefFrames = "" + num_ref_frames;
+
+		//Skip over gaps_in_frame_num_value_allowed_flag
+		bitOffset += 1
+		//pic_width_in_mbs_minus1
+		parseTemp = parseExpGolomb(rawData, bitOffset);
+		var pic_width_in_mbs_minus1 = parseTemp[0];
+		bitOffset += parseTemp[1];
+		console.log("pic_width_in_mbs_minus1: " + pic_width_in_mbs_minus1);
+
+		//pic_height_in_map_units_minus1
+		parseTemp = parseExpGolomb(rawData, bitOffset);
+		var pic_height_in_map_units_minus1 = parseTemp[0];
+		bitOffset += parseTemp[1];
+		console.log("pic_height_in_map_units_minus1: " + pic_height_in_map_units_minus1);
+
+		var frame_mbs_only_flag = readBits(rawData, bitOffset,1);
+		bitOffset += 1;
+		console.log("frame_mbs_only_flag: " + frame_mbs_only_flag);
+		if(frame_mbs_only_flag != 1){
+            //Skip over mb_adaptive_frame_field_flag
+            bitOffset += 1;
+		}
+
+		//Skip over direct_8x8_inference_flag
+		bitOffset += 1;
+
+		var frame_cropping_flag = readBits(rawData, bitOffset,1);
+		bitOffset += 1;
+		console.log("frame_cropping_flag: " + frame_cropping_flag);
+		if(frame_cropping_flag == 1){
+		    console.log("Reading cropping info");
+            parseTemp = parseExpGolomb(rawData, bitOffset);
+            bitOffset += parseTemp[1];
+            console.log("frame_crop_left_offset: " + parseTemp[0]);
+            parseTemp = parseExpGolomb(rawData, bitOffset);
+            bitOffset += parseTemp[1];
+            console.log("frame_crop_right_offset: " + parseTemp[0]);
+            parseTemp = parseExpGolomb(rawData, bitOffset);
+            bitOffset += parseTemp[1];
+            console.log("frame_crop_top_offset: " + parseTemp[0]);
+            parseTemp = parseExpGolomb(rawData, bitOffset);
+            bitOffset += parseTemp[1];
+            console.log("frame_crop_bottom_offset: " + parseTemp[0]);
+		}
+
+		var vui_parameters_present_flag = readBits(rawData, bitOffset,1);
+		bitOffset += 1;
+		console.log("vui_parameters_present_flag: " + vui_parameters_present_flag);
+		if(vui_parameters_present_flag == 1){
+		    var aspect_ratio_info_present_flag = readBits(rawData, bitOffset,1);
+			bitOffset += 1;
+			console.log("aspect_ratio_info_present_flag: " + aspect_ratio_info_present_flag);
+			if(aspect_ratio_info_present_flag == 1){
+              var aspect_ratio_idc = readBits(rawData, bitOffset, 8);
+                bitOffset += 8;
+			    console.log("aspect_ratio_idc: " + aspect_ratio_idc);
+				if(aspect_ratio_idc == 255){
+				    sar_width = readBits(rawData, bitOffset, 16);
+    				bitOffset += 16;
+    				console.log("sar_width: " + sar_width);
+    				sar_height = readBits(rawData, bitOffset, 16);
+    				bitOffset += 16;
+    				console.log("sar_height: " + sar_height);
+				}
+			}
+
+			var overscan_info_present_flag = readBits(rawData, bitOffset,1);
+			bitOffset += 1;
+			console.log("overscan_info_present_flag: " + overscan_info_present_flag);
+			if(overscan_info_present_flag == 1){
+			   bitOffset += 1;
+			}
+
+			var video_signal_type_present_flag = readBits(rawData, bitOffset,1);
+			bitOffset += 1;
+			console.log("video_signal_type_present_flag: " + video_signal_type_present_flag);
+			if(video_signal_type_present_flag == 1){
+						var video_format = readBits(rawData, bitOffset,3);
+						bitOffset += 3;
+
+						var video_full_range_flag = readBits(rawData, bitOffset,1);
+						bitOffset += 1;
+						console.log("video_full_range_flag: " + video_full_range_flag);
+
+						var colour_description_present_flag = readBits(rawData, bitOffset,1);
+						bitOffset += 1;
+						console.log("colour_description_present_flag: " + colour_description_present_flag);
+
+						if(colour_description_present_flag == 1){
+						    var colour_primaries = readBits(rawData, bitOffset,8);
+							bitOffset += 8;
+							console.log("colour_primaries: " + colour_primaries);
+							var transfer_characteristics = readBits(rawData, bitOffset,8);
+							bitOffset += 8;
+							console.log("transfer_characteristics: " + transfer_characteristics);
+							var matrix_coefficients = readBits(rawData, bitOffset,8);
+							bitOffset += 8;
+							console.log("matrix_coefficients: " + matrix_coefficients);
+
+							colourPrimaries = colour_primaries;
+							if(colour_primaries == 1) colourPrimaries = "ITU-R Recommendation BT.709";
+							if(colour_primaries == 2) colourPrimaries = "Unspecified";
+							if(colour_primaries == 4) colourPrimaries = "ITU-R Recommendation BT.470-2 System M";
+							if(colour_primaries == 5) colourPrimaries = "ITU-R Recommendation BT.470-2 System B, G";
+							if(colour_primaries == 6) colourPrimaries = "Society of Motion Picture and Television Engineers 170M";
+							if(colour_primaries == 7) colourPrimaries = "Society of Motion Picture and Television Engineers 240M (1987)";
+							if(colour_primaries == 8) colourPrimaries = "Generic film (colour filters using Illuminant C)";
+
+							transferCharacteristics = transfer_characteristics;
+							if(transfer_characteristics == 1) transferCharacteristics = "ITU-R Recommendation BT.709";
+							if(transfer_characteristics == 2) transferCharacteristics = "Unspecified";
+							if(transfer_characteristics == 4) transferCharacteristics = "ITU-R Recommendation BT.470-2 System M";
+							if(transfer_characteristics == 5) transferCharacteristics = "ITU-R Recommendation BT.470-2 System B, G";
+							if(transfer_characteristics == 6) transferCharacteristics = "Society of Motion Picture and Television Engineers 170M";
+							if(transfer_characteristics == 7) transferCharacteristics = "Society of Motion Picture and Television Engineers 240M (1987)";
+							if(transfer_characteristics == 8) transferCharacteristics = "Linear transfer characteristics";
+							if(transfer_characteristics == 9) transferCharacteristics = "Logarithmic transfer characteristic ( 100:1 range )";
+							if(transfer_characteristics == 10) transferCharacteristics = "Logarithmic transfer characteristic ( 316.22777:1 range )";
+
+							matrixCoefficients = matrix_coefficients;
+							if(matrix_coefficients == 1) matrixCoefficients = "ITU-R Recommendation BT.709";
+							if(matrix_coefficients == 2) matrixCoefficients = "Unspecified";
+							if(matrix_coefficients == 4) matrixCoefficients = "Federal Communications Commission";
+							if(matrix_coefficients == 5) matrixCoefficients = "ITU-R Recommendation BT.470-2 System B, G";
+							if(matrix_coefficients == 6) matrixCoefficients = "Society of Motion Picture and Television Engineers 170M";
+							if(matrix_coefficients == 7) matrixCoefficients = "Society of Motion Picture and Television Engineers 240M (1987)";
+						}
+
+			}
+
+		}
+
+
 	}
 
    function parseH264Frames(samples) {
@@ -1172,6 +1322,9 @@ let ctx = canvas.getContext('2d');
 	   avcCspsStart = 0;
 	   gopSize = -1;
 	   extraKeyFrames = [];
+	   colourPrimaries = "No info"
+	   transferCharacteristics = "No info"
+	   matrixCoefficients = "No info"
 
        e.stopPropagation();
        e.preventDefault();
